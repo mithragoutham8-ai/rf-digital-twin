@@ -6,11 +6,49 @@ management, and handover tuning — all built on real ray-traced channel data.
 **Data source:** DeepMIMO v4 — scenario `city_9_sanfrancisco_3p5` (3.5 GHz, C-band).
 3 base stations, 40,376 candidate user locations, 53.6% ray-traced eligibility.
 
-> **Note on repo contents:** this repo currently holds the full project report and its
-> figures. The `rftwin` Python package described in the report (site selection,
-> outage/healing, radio-map reconstruction, beam management, handover modules, shared
-> KPI engine, and test suite) is referenced throughout but is not included here yet —
-> add it with `git add` / `git push` once you have the source on hand.
+> **Note on repo contents:** this repo has the full project report, its figures, the
+> top-level orchestration script (`run_all.py`), and `requirements.txt`. The `rftwin`
+> package itself — the actual module source (`kpi.py`, `site_selection.py`,
+> `outage.py`, `radiomap.py`, `beam.py`, `mobility.py`, `viz.py`, `data.py`) that
+> `run_all.py` imports — has not been uploaded yet, so `run_all.py` will not run until
+> those files are added. See [`rftwin/README.md`](rftwin/README.md) for the exact list.
+
+## Running the pipeline
+
+```bash
+pip install -r requirements.txt
+
+# 1) pipeline check without any download (synthetic data — NOT results)
+python run_all.py --synthetic --target 0.9 --out out_synth
+
+# 2) real data: pick a scenario with >= 3 BSs sharing one UE grid
+python -c "import deepmimo as dm; print(dm.get_available_scenarios())"
+python run_all.py --scenario <name> --target 0.95 --out out_real            # C-band
+python run_all.py --scenario <mmwave_name> --mmwave --out out_mmwave        # mmWave
+
+pytest -q          # 7 smoke tests
+```
+
+Modules 3 and 4 work with a single BS; modules 1, 2, 5 need several BSs on the same
+receiver grid (the loader raises a clear error otherwise). Developed against DeepMIMO
+4.0.5 (`rftwin/data.py::load_deepmimo`, once added) — it reads `rx_pos`, `tx_pos`,
+`pathloss`, `los`, `power`, `phase`, `aod_az`, `aod_el`; if your DeepMIMO version names
+things differently, that one function is the only adapter to change. The scenario
+servers were not reachable when this was built, so the loader has not yet been run on
+a real scenario — that's the immediate next step once the `rftwin` source is in place.
+
+### Design choices worth defending
+
+- Greedy uses the *exact* SINR-aware metric; ILP is a lower bound on sites for the
+  linear (RSRP-only) problem.
+- Kriging length-scale is bounded (20 m–1 km); unbounded fits collapsed to ~0 m when
+  LoS/NLoS jumps dominated.
+- Beam models are scored on held-out map tiles, not random points (random splits leak
+  between neighbouring grid points).
+- Beam ML predicts the *offset* from the geometric beam, so it can only improve on the
+  physics baseline where geometry fails (NLoS).
+- Handover uses identical trajectories and measurement noise for every parameter pair
+  (paired comparison).
 
 ## Headline findings
 
@@ -99,6 +137,10 @@ assumptions against real drive-test data from a live market.
 - [`figures/`](figures/) — the 13 figures from the report (coverage maps, outage
   analysis, radio-map RMSE curves, beam-management gain, handover cost surfaces,
   reference RSRP/SINR/throughput maps).
+- [`run_all.py`](run_all.py) — top-level script that runs all five modules end to end.
+- [`requirements.txt`](requirements.txt) — Python dependencies.
+- [`rftwin/`](rftwin/) — package directory for the module source; currently just a
+  note listing the files still to be added (see above).
 
 ## License
 
